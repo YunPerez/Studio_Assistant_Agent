@@ -1,2 +1,11 @@
-# Studio_Assistant_Agent
-Desarrollar un agente de IA, que ayude en el estudio mediante la generación de preguntas, resúmenes y explicaciones personalizadas basadas en el material de estudio del usuario en formato.
+# Asistente de Estudio Personalizado
+
+Un agente de IA que ayuda al usuario generando preguntas, resúmenes y explicaciones basadas en materiales de estudio.
+
+## Requisitos
+- Python >=3.8
+- OpenAI SDK
+
+## Instalación
+```bash
+pip install -r requirements.txt

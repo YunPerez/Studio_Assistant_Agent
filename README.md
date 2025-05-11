@@ -9,3 +9,9 @@ Un agente de IA que ayuda al usuario generando preguntas, resúmenes y explicaci
 ## Instalación
 ```bash
 pip install -r requirements.txt
+
+```python
+!pip install numpy pandas matplotlib langchain openai python-dotenv --quiet
+!pip install typing-extensions pydantic pydantic_settings --quiet
+!pip install langchain-community langchain-openai --quiet
+!pip install -U langchain-ollama --quiet

@@ -1,0 +1,43 @@
+name: studio_assistant-env
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - scikit-learn
+  - pandas
+  - numpy
+  - pytest
+  - ipython
+  - jupyter
+  - jupyterlab
+  - matplotlib
+  - seaborn
+  - plotly
+  - pylint
+  - autopep8
+  - joblib
+  - streamlit
+  - openai
+  - langchain
+  - python-dotenv
+  - PyPDF2
+  - nltk
+  - requests
+  - langchain-openai
+  - langchain[docarray]
+  - docarray
+  - pydantic==1.10.8
+  - tiktoken 
+  - ruff
+  - streamlit
+  - faiss-cpu
+  - whisper
+  - requests
+  - bs4
+  - pyPDF2
+  - chromadb
+  - unstructured
+  - "unstructured[pdf]"
+  - typing
+  - dataclasses
+  - sentence-transformers

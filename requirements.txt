@@ -1,0 +1,8 @@
+streamlit
+openai
+langchain
+python-dotenv
+PyPDF2
+nltk
+requests
+pytest

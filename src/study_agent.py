@@ -3,18 +3,18 @@
 import os
 import re
 import json
-import textwrap
 from abc import ABC
-from typing import List, Dict, Any
-from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
 
-from dotenv import load_dotenv
+import chromadb
+from chromadb.config import Settings
+from sentence_transformers import SentenceTransformer
 from PyPDF2 import PdfReader
 from openai import OpenAI
+from dotenv import load_dotenv
 
-# ── CARGA DE CONFIGURACIÓN ──────────────────────────────────────────────────────
-
-load_dotenv()  # Carga .env
+# ── CARGA DE CONFIG ─────────────────────────────────────────────────────────────
+load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL_NAME     = os.getenv("MODEL_NAME", "gpt-4o-mini-2024-07-18")
 
@@ -23,54 +23,47 @@ if not OPENAI_API_KEY:
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-
-# ── USER PROFILE ─────────────────────────────────────────────────────────────────
-
-@dataclass
-class UserProfile:
-    user_id:        str
-    name:           str
-    learning_style: str  # "visual", "auditivo", "kinestésico", etc.
-
-    @classmethod
-    def load(cls, path: str) -> "UserProfile":
-        data = json.loads(open(path, "r", encoding="utf-8").read())
-        return cls(**data)
-
-    def save(self, path: str):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.__dict__, f, ensure_ascii=False, indent=2)
-
-
-# ── PROGRESS TRACKER ─────────────────────────────────────────────────────────────
-
+# ── PROGRESS TRACKER ────────────────────────────────────────────────────────────
 class ProgressTracker:
-    def __init__(self):
-        self._data: Dict[str, Dict[str, Any]] = {}
+    def __init__(self, filename: str = "progress.json"):
+        self.filename = filename
+        # cargar datos si existe
+        if os.path.exists(self.filename):
+            with open(self.filename, "r", encoding="utf-8") as f:
+                self._data: Dict[str, Any] = json.load(f)
+        else:
+            self._data = {
+                "documents_ingested": 0,
+                "questions_generated": 0,
+                "summaries_generated": 0,
+                "adaptations": 0,
+                "rag_queries": 0,
+                "sections_indexed": 0
+            }
 
-    def update(self, user_id: str, key: str, value: Any):
-        self._data.setdefault(user_id, {})
-        self._data[user_id][key] = value
+    def update(self, key: str, amount: int = 1):
+        # suma incremental
+        self._data[key] = self._data.get(key, 0) + amount
+        # guardar inmediatamente
+        with open(self.filename, "w", encoding="utf-8") as f:
+            json.dump(self._data, f, ensure_ascii=False, indent=2)
 
-    def get(self, user_id: str) -> Dict[str, Any]:
-        return self._data.get(user_id, {})
+    def get(self) -> Dict[str, Any]:
+        return self._data
 
 
-# ── DATA PROCESSING ──────────────────────────────────────────────────────────────
-
+# ── DATA PROCESSING ─────────────────────────────────────────────────────────────
 class DataProcessor:
     @staticmethod
     def load_text_from_pdf(path: str) -> str:
         reader = PdfReader(path)
-        text = []
-        for page in reader.pages:
-            text.append(page.extract_text() or "")
-        return "\n".join(text)
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
 
     @staticmethod
     def load_text_from_txt(path: str) -> str:
-        return open(path, "r", encoding="utf-8").read()
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+
 
     @staticmethod
     def clean_text(text: str) -> str:
@@ -80,8 +73,7 @@ class DataProcessor:
         return "\n".join(lines)
 
 
-# ── GENERATOR BASE ───────────────────────────────────────────────────────────────
-
+# ── BASE LLM CALL ───────────────────────────────────────────────────────────────
 class OpenAIGenerator(ABC):
     def __init__(self, model: str = MODEL_NAME, temperature: float = 0.7):
         self.model = model
@@ -96,42 +88,91 @@ class OpenAIGenerator(ABC):
         return resp.choices[0].message.content.strip()
 
 
-# ── QUESTIONS ───────────────────────────────────────────────────────────────────
-
+# ── PREGUNTAS ──────────────────────────────────────────────────────────────────
 class QuestionGenerator(OpenAIGenerator):
     def generate(self, text: str, n: int = 5) -> List[str]:
         prompt = (
-            f"Eres un tutor que genera {n} preguntas de comprensión "
-            f"basadas en el siguiente material:\n\n{text[:100000]}"
+            f"Eres un tutor que genera {n} preguntas de comprensión lectora basadas en este texto:\n\n"
+            f"{text[:100000]}\n\n"
+            "Para cada pregunta:\n"
+            " - Proporciona 3 opciones de respuesta (A, B, C).\n"
+            " - Señala claramente cuál es la correcta.\n"
+            "Numera cada pregunta 1., 2., etc."
         )
         out = self._call(prompt)
-        questions: List[str] = []
+        blocks: List[str] = []
+        current: Optional[str] = None
         for line in out.split("\n"):
-            m = re.match(r"^\s*(\d+)\.\s*(.*)", line)
-            if m:
-                questions.append(m.group(2).strip())
-            if len(questions) >= n:
-                break
-        return questions
+            line = line.strip()
+            if not line:
+                continue
+            if re.match(r'^\d+\.', line):
+                if current:
+                    blocks.append(current.strip())
+                current = re.sub(r'^\d+\.\s*', '', line)
+            else:
+                if current is not None:
+                    current += "\n" + line
+        if current:
+            blocks.append(current.strip())
+        return blocks[:n]
 
 
-# ── SUMMARIZER ───────────────────────────────────────────────────────────────────
-
+# ── RESUMEN ─────────────────────────────────────────────────────────────────────
 class Summarizer(OpenAIGenerator):
     def summarize(self, text: str, style: str = "short") -> str:
         prompt = f"Resume el siguiente texto de forma {style}:\n\n{text[:100000]}"
         return self._call(prompt)
 
 
-# ── STUDY AGENT ─────────────────────────────────────────────────────────────────
+# ── ADAPTACIÓN AL USUARIO ───────────────────────────────────────────────────────
+class AdaptationGenerator(OpenAIGenerator):
+    def generate(self, text: str, style: str, level: str) -> str:
+        prompt = f"""
+Eres un tutor que adapta su enseñanza al estilo de aprendizaje "{style}" y nivel "{level}".
+A partir de este texto:
 
+{text[:10000]}
+
+Responde **solo** con tres secciones numeradas:
+1) Resumen breve del texto (1–2 frases).
+2) Sugerencia de estudio específicamente PARA el estilo "{style}".
+3) Actividad práctica PARA el estilo "{style}".
+4) Realiza un diagrama o esquema visual que resuma el texto y la actividad práctica únicamente PARA el estilo "Visual".
+
+No menciones otros estilos.
+"""
+        return self._call(prompt)
+
+
+# ── VECTOR SEARCH (RAG) ────────────────────────────────────────────────────────
+class VectorSearchEngine:
+    def __init__(self, collection_name: str = "notas_estudio"):
+        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+        self.client = chromadb.Client(Settings())
+        self.collection = self.client.get_or_create_collection(
+            name=collection_name, metadata={"hnsw:space": "cosine"}
+        )
+
+    def add_documents(self, documents: List[str], ids: List[str]):
+        embeddings = self.model.encode(documents).tolist()
+        self.collection.add(documents=documents, ids=ids, embeddings=embeddings)
+
+    def search(self, query: str, n_results: int = 3) -> List[str]:
+        emb = self.model.encode([query]).tolist()
+        results = self.collection.query(query_embeddings=emb, n_results=n_results)
+        return results["documents"][0]
+
+
+# ── STUDY AGENT ────────────────────────────────────────────────────────────────
 class StudyAgent:
-    def __init__(self, user: UserProfile):
-        self.user = user
-        self.processor = DataProcessor()
-        self.qgen = QuestionGenerator()
-        self.summ = Summarizer()
-        self.tracker = ProgressTracker()
+    def __init__(self):
+        self.processor     = DataProcessor()
+        self.qgen          = QuestionGenerator()
+        self.summ          = Summarizer()
+        self.adapt_gen     = AdaptationGenerator()
+        self.search_engine = VectorSearchEngine()
+        self.tracker       = ProgressTracker("progress.json")
 
     def ingest(self, path: str) -> str:
         ext = os.path.splitext(path)[1].lower()
@@ -141,88 +182,50 @@ class StudyAgent:
             raw = self.processor.load_text_from_txt(path)
         else:
             raise ValueError("Formato no soportado, usa .pdf o .txt")
-        return self.processor.clean_text(raw)
+        clean = self.processor.clean_text(raw)
+        self.tracker.update("documents_ingested", 1)
+        return clean
 
-    def ask_questions(self, text: str, n: int = 5) -> List[str]:
-        qs = self.qgen.generate(text, n)
-        self.tracker.update(self.user.user_id, "questions_generated", len(qs))
-        return qs
+    def index_text_sections(self, text: str, chunk_size: int = 500, overlap: int = 50):
+        sections = []
+        for i in range(0, len(text), chunk_size - overlap):
+            chunk = text[i : i + chunk_size].strip()
+            if len(chunk) > 100:
+                sections.append(chunk)
+        if sections:
+            ids = [f"sec_{i}" for i in range(len(sections))]
+            self.search_engine.add_documents(sections, ids)
+            self.tracker.update("sections_indexed", len(sections))
+
+    def retrieve_relevant_sections(self, query: str, n: int = 3) -> List[str]:
+        docs = self.search_engine.search(query, n)
+        joined = "\n\n".join(docs)
+        answer = self.summ.summarize(
+            f"Responde a esta consulta usando solo el texto:\n\n{joined}\n\nConsulta: {query}",
+            style="short"
+        )
+        self.tracker.update("rag_queries", 1)
+        return [answer]
+
+    def ask_questions(
+        self,
+        text: str,
+        n: int = 5,
+        style: str = "Visual",
+        level: str = "Intermedio"
+    ) -> List[str]:
+        self.tracker.update("questions_generated", n)
+        return self.qgen.generate(text, n)
 
     def get_summary(self, text: str, style: str = "short") -> str:
-        summary = self.summ.summarize(text, style)
-        self.tracker.update(self.user.user_id, f"summary_{style}", True)
-        return summary
+        s = self.summ.summarize(text, style)
+        self.tracker.update("summaries_generated", 1)
+        return s
 
-    def adapt_to_user(self, text: str) -> str:
-        base = self.get_summary(text, style="short")
-        prefix = {
-            "visual":      "📊 [Diagrama sugerido]",
-            "auditivo":    "🎧 [Narración sugerida]",
-            "kinestésico": "🏃 [Actividad sugerida]"
-        }.get(self.user.learning_style, "")
-        return f"{prefix}\n\n{base}" if prefix else base
+    def adapt_to_user(self, text: str, style: str, level: str) -> str:
+        out = self.adapt_gen.generate(text, style, level)
+        self.tracker.update("adaptations", 1)
+        return out
 
     def get_progress(self) -> Dict[str, Any]:
-        return self.tracker.get(self.user.user_id)
-
-
-# ── EJEMPLO DE USO ───────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    # 1) Crear o cargar perfil
-    profile_path = "profiles/user_1.json"
-    if os.path.exists(profile_path):
-        user = UserProfile.load(profile_path)
-    else:
-        user = UserProfile(user_id="user_1", name="Yuneri", learning_style="visual")
-        user.save(profile_path)
-
-    agent = StudyAgent(user)
-
-    documento = "docs/Historiadelosmayas.pdf"
-    texto = agent.ingest(documento)
-
-    # ── Vista previa ──────────────────────────────────────────────────────────────
-    print("\n" + "="*60)
-    print("📄 VISTA PREVIA DEL TEXTO".center(60))
-    print("="*60 + "\n")
-    print(textwrap.fill(texto[:1000], width=80), "\n")
-
-    # ── Preguntas ─────────────────────────────────────────────────────────────────
-    qs = agent.ask_questions(texto, n=5)
-    print("\n" + "="*60)
-    print("❓ PREGUNTAS DE COMPRENSIÓN".center(60))
-    print("="*60 + "\n")
-    for i, q in enumerate(qs, 1):
-        print(f"{i}. {q}")
-    print()
-
-    # ── Resumen breve ─────────────────────────────────────────────────────────────
-    summary = agent.get_summary(texto, style="short")
-    print("\n" + "="*60)
-    print("📝 RESUMEN BREVE".center(60))
-    print("="*60 + "\n")
-    print(textwrap.fill(summary, width=80), "\n")
-
-    # ── Adaptación ────────────────────────────────────────────────────────────────
-    adapted = agent.adapt_to_user(texto)
-    print("\n" + "="*60)
-    print("🎨 ADAPTADO A TU ESTILO".center(60))
-    print("="*60 + "\n")
-    print(textwrap.fill(adapted, width=80), "\n")
-
-    # ── Progreso ───────────────────────────────────────────────────────────────────
-    progress = agent.get_progress()
-    print("\n" + "="*60)
-    print("📊 PROGRESO REGISTRADO".center(60))
-    print("="*60 + "\n")
-    print(json.dumps(progress, indent=2, ensure_ascii=False))
-    print()
-    # ── Guardar progreso ───────────────────────────────────────────────────────────
-    user.save(profile_path)
-    print("\n" + "="*60)
-    print("💾 PROGRESO GUARDADO".center(60))
-    print("="*60 + "\n")
-    print("¡Listo! Tu progreso ha sido guardado.")
-    print()
-    # ── Fin del script ─────────────────────────────────────────────────────────────
+        return self.tracker.get()

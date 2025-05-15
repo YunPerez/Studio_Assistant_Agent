@@ -6,3 +6,6 @@ PyPDF2
 nltk
 requests
 pytest
+chromadb
+sentence-transformers
+reportlab

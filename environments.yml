@@ -41,3 +41,4 @@ dependencies:
   - typing
   - dataclasses
   - sentence-transformers
+  - reportlab

@@ -89,45 +89,5 @@ streamlit run app.py
     └── user_model.py
 ```
 
-### Arquitectura
-
-```mermaid
-flowchart TD
-  %% Entrada de datos
-  Uploader[📄 PDF/TXT subido] -->|temp_upload| DP[DataProcessor]
-
-  %% Limpieza e ingestión
-  DP --> SA[StudyAgent.ingest()]
-  SA --> Clean[DataProcessor.clean_text]
-  Clean --> Text[Texto limpio]
-
-  %% Indexación RAG (Vector Search)
-  Text --> VS[VectorSearchEngine.index_text_sections]
-  VS -->|secciones + embeddings| Chroma[(ChromaDB + S-T)]
-
-  %% Generación LLM
-  subgraph Generadores
-    QG[QuestionGenerator] -->|API| OpenAI[(OpenAI Chat API)]
-    Sum[Summarizer]        -->|API| OpenAI
-    Adp[AdaptationGenerator] -->|API| OpenAI
-  end
-  Text --> QG
-  Text --> Sum
-  Text --> Adp
-
-  %% Resultados
-  QG --> Questions[❓ Preguntas (MCQ + respuesta)]
-  Sum --> Summary[📝 Resumen breve]
-  Adp --> Adapted[🎨 Estrategia adaptada]
-  Chroma --> RagAnswer[🔍 Respuesta RAG]
-
-  %% UI / Exportación
-  subgraph UI
-    Questions & Summary & Adapted & RagAnswer --> Streamlit[Streamlit App (app.py)]
-    Streamlit --> Progress[📊 Progreso (tracker)]
-    Streamlit --> Export[📥 Exportar PDF]
-  end
-```
-
 ### Diagrama de arquitectura
-![Diagrama de arquitectura](imgs/architecture.png)
+![Diagrama de arquitectura](imgs/arquitectura.png)

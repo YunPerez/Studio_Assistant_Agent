@@ -1,6 +1,8 @@
 # Brainee ByteTutor  
 *(Temas Selectos de Análisis de Datos ITAM – Primavera 2025)*  
 
+![Logo](imgs/Brainee_ByteTutor.png)
+
 Repositorio de un asistente de estudio inteligente que permite al usuario cargar material en PDF/TXT y, mediante LLMs y búsqueda vectorial, generar automáticamente preguntas de comprensión, resúmenes y estrategias de estudio adaptadas a su estilo de aprendizaje y nivel de conocimiento.
 
 ---

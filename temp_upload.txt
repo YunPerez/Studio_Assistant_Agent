@@ -1,8 +1,0 @@
-Modelos de Lenguaje Extensos (LLMs)
-Los LLMs son arquitecturas de aprendizaje profundo basadas en transformadores que han demostrado capacidades avanzadas de comprensión y generación de texto. Se entrenan con corpora masivos para capturar patrones lingüísticos y contextuales, permitiendo aplicaciones como generación automática de contenido y asistencia en redacción.
-
-Inteligencia Artificial (IA)
-La IA abarca técnicas y algoritmos que permiten a las máquinas realizar tareas inteligentes. Incluye subcampos como aprendizaje automático, aprendizaje profundo y sistemas basados en conocimiento. Se utiliza en visión por computadora, reconocimiento de voz, sistemas de recomendación y diagnóstico médico.
-
-Agentes de IA
-Los agentes de IA son sistemas autónomos que perciben su entorno y realizan acciones para alcanzar objetivos. Pueden ser reactivos o deliberativos, y suelen integrar LLMs para interactuar en lenguaje natural. Ejemplos de agentes incluyen chatbots avanzados, asistentes virtuales y robots colaborativos.

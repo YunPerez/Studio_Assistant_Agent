@@ -91,5 +91,11 @@ streamlit run app.py
     └── user_model.py
 ```
 
+### Pantallas
+![ejemplo_inicio](imgs/inicio.png)
+![ejemplo_preguntas](imgs/preguntas.png)
+![ejemplo_resumen](imgs/resumen.png)
+![ejemplo_estilo](imgs/estilo.png)
+
 ### Diagrama de arquitectura
 ![Diagrama de arquitectura](imgs/arquitectura.png)

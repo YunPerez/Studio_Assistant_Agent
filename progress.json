@@ -1,8 +1,8 @@
 {
-  "documents_ingested": 19,
-  "questions_generated": 10,
-  "summaries_generated": 1,
-  "adaptations": 4,
+  "documents_ingested": 23,
+  "questions_generated": 15,
+  "summaries_generated": 2,
+  "adaptations": 5,
   "rag_queries": 4,
   "sections_indexed": 34
 }
